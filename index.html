@@ -78,11 +78,18 @@
             padding-right: 20px;
         }
         #file-name {
-            margin-top: 1rem;
+            margin-top: 0.5rem;
             padding: 0.5rem;
             border: 2px inset #808080;
             background-color: #ffffff;
             min-height: 1.2em;
+        }
+        #url-input {
+            width: 100%;
+            box-sizing: border-box;
+            font-size: 12px;
+            padding: 4px;
+            border: 2px inset #808080;
         }
         #ascii-output {
             font-family: "Courier New", Courier, monospace;
@@ -93,7 +100,6 @@
             overflow: hidden; /* 스크롤바 제거 */
             cursor: grab;
             height: 350px; 
-            /* 초기 플레이스홀더를 위한 스타일 */
             display: flex;
             justify-content: center;
             align-items: center;
@@ -137,11 +143,19 @@
             <span>STL 3D ASCII Viewer</span>
         </div>
         <div class="window-body">
-            <p>STL 파일을 선택하고 모델을 제어해보세요.</p>
+            <p>기본 모델이 표시됩니다. 다른 파일을 보려면 선택하거나 URL을 붙여넣으세요.</p>
             
-            <label for="stl-file-input" class="file-label">파일 찾기...</label>
-            <input type="file" id="stl-file-input" accept=".stl">
-            <div id="file-name">선택된 파일 없음</div>
+            <fieldset>
+                <legend>파일 불러오기</legend>
+                <div class="control-item">
+                    <label for="stl-file-input" class="file-label">내 파일...</label>
+                    <div id="file-name" style="flex-grow: 1;">선택된 파일 없음</div>
+                </div>
+                <div class="control-item" style="margin-top: 1rem;">
+                    <input type="text" id="url-input" placeholder="https://.../file.stl">
+                    <button id="load-url-btn">URL 로드</button>
+                </div>
+            </fieldset>
             
             <div class="controls-container">
                 <fieldset>
@@ -180,195 +194,198 @@
             </div>
 
             <div id="ascii-output">
-                <div class="placeholder">파일을 업로드하여 3D 모델을 확인하세요.</div>
+                <div class="placeholder">모델 로딩 중...</div>
             </div>
         </div>
     </div>
 
     <script>
-        // --- 기본 요소 ---
-        const fileInput = document.getElementById('stl-file-input');
-        const fileNameDisplay = document.getElementById('file-name');
-        const asciiOutput = document.getElementById('ascii-output');
-        const toggleRotationBtn = document.getElementById('toggle-rotation-btn');
-        const rotationSpeedSlider = document.getElementById('rotation-speed-slider');
-        const zoomSlider = document.getElementById('zoom-slider');
-        const charsetSelect = document.getElementById('charset-select');
-        const resolutionSlider = document.getElementById('resolution-slider');
-        const invertColorsBtn = document.getElementById('invert-colors-btn');
+        // *** 수정: 스크립트 전체를 DOMContentLoaded 이벤트 리스너로 감싸서 실행 시점을 보장합니다. ***
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- 기본 요소 ---
+            const fileInput = document.getElementById('stl-file-input');
+            const fileNameDisplay = document.getElementById('file-name');
+            const urlInput = document.getElementById('url-input');
+            const loadUrlBtn = document.getElementById('load-url-btn');
+            const asciiOutput = document.getElementById('ascii-output');
+            const toggleRotationBtn = document.getElementById('toggle-rotation-btn');
+            const rotationSpeedSlider = document.getElementById('rotation-speed-slider');
+            const zoomSlider = document.getElementById('zoom-slider');
+            const charsetSelect = document.getElementById('charset-select');
+            const resolutionSlider = document.getElementById('resolution-slider');
+            const invertColorsBtn = document.getElementById('invert-colors-btn');
 
-        // --- 상태 변수 ---
-        let scene, camera, renderer, mesh, animationFrameId;
-        let isAutoRotating = true;
-        let rotationSpeed = 0.01;
-        let isDragging = false;
-        let previousMousePosition = { x: 0, y: 0 };
-        let lastUpdateTime = 0;
-        const updateInterval = 100;
+            // --- 상태 변수 ---
+            let scene, camera, renderer, mesh, animationFrameId;
+            let isAutoRotating = true, rotationSpeed = 0.01, isDragging = false;
+            let previousMousePosition = { x: 0, y: 0 };
+            let lastUpdateTime = 0;
+            const updateInterval = 100;
 
-        // --- 설정 변수 ---
-        const CHAR_SETS = {
-            detailed: '`^\",:;Il!i~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$',
-            simple: ' .:-=+*#%@',
-            blocks: ' ░▒▓█'
-        };
-        let currentAsciiChars = CHAR_SETS.detailed;
-        let modelColor = '#87CEFA';
-        let bgColor = '#333';
-        let sceneBgColor = 0x000000;
+            // --- 설정 변수 ---
+            const CHAR_SETS = {
+                detailed: '`^\",:;Il!i~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$',
+                simple: ' .:-=+*#%@',
+                blocks: ' ░▒▓█'
+            };
+            let currentAsciiChars = CHAR_SETS.detailed;
+            let modelColor = '#87CEFA', bgColor = '#333', sceneBgColor = 0x000000;
+            const defaultStlUrl = '스크류바 조명.stl';
 
-        // --- Three.js 초기화 및 리셋 ---
-        function initThree() {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(sceneBgColor);
-            camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000); // aspect는 나중에 계산
-            renderer = new THREE.WebGLRenderer();
-            updateRendererSize(); // 초기 렌더러 크기 설정
-            resetCamera();
-        }
-        
-        function resetCamera() {
-            if(camera) camera.position.z = 100;
-            zoomSlider.value = 100;
-        }
-        
-        // --- 렌더러 크기 동적 계산 ---
-        function updateRendererSize() {
-            if (!asciiOutput) return;
-
-            const fontSize = parseInt(resolutionSlider.max) + parseInt(resolutionSlider.min) - parseInt(resolutionSlider.value);
-            const lineHeight = fontSize;
-            
-            asciiOutput.style.fontSize = `${fontSize}px`;
-            asciiOutput.style.lineHeight = `${lineHeight}px`;
-
-            const charWidth = fontSize * 0.6;
-            const charHeight = lineHeight;
-
-            if (charWidth <= 0 || charHeight <= 0) return;
-
-            const containerWidth = asciiOutput.clientWidth;
-            const containerHeight = asciiOutput.clientHeight;
-
-            const renderWidth = Math.floor(containerWidth / charWidth);
-            const renderHeight = Math.floor(containerHeight / charHeight);
-            
-            if (renderer) {
-                renderer.setSize(renderWidth, renderHeight);
+            // --- Three.js 초기화 및 리셋 ---
+            function initThree() {
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(sceneBgColor);
+                camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+                renderer = new THREE.WebGLRenderer();
+                updateRendererSize();
+                resetCamera();
             }
-            if (camera) {
-                camera.aspect = renderWidth / renderHeight;
-                camera.updateProjectionMatrix();
-            }
-        }
-
-
-        // --- 파일 및 STL 로드 ---
-        fileInput.addEventListener('change', (event) => {
-            const file = event.target.files[0];
-            if (!file) return;
-            fileNameDisplay.textContent = `파일: ${file.name}`;
-            const reader = new FileReader();
-            reader.onload = (e) => loadSTL(e.target.result);
-            reader.readAsArrayBuffer(file);
-        });
-
-        function loadSTL(contents) {
-            if (animationFrameId) cancelAnimationFrame(animationFrameId);
-            if (!scene) initThree();
-            while(scene.children.length > 0) scene.remove(scene.children[0]); 
-
-            // *** 수정된 부분: 렌더링 시작 시, 플레이스홀더를 위한 flex 스타일을 제거합니다. ***
-            asciiOutput.style.display = 'block';
-            asciiOutput.style.textAlign = 'left';
-
-            const loader = new THREE.STLLoader();
-            const geometry = loader.parse(contents);
-            geometry.center();
-            const material = new THREE.MeshNormalMaterial();
-            mesh = new THREE.Mesh(geometry, material);
-            const box = new THREE.Box3().setFromObject(mesh);
-            const size = box.getSize(new THREE.Vector3());
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const scale = 100 / maxDim;
-            mesh.scale.set(scale, scale, scale);
-            scene.add(mesh);
-            resetCamera();
-            animate(0);
-        }
-
-        // --- 컨트롤 이벤트 리스너 ---
-        toggleRotationBtn.addEventListener('click', () => {
-            isAutoRotating = !isAutoRotating;
-            toggleRotationBtn.textContent = isAutoRotating ? '회전 정지' : '회전 시작';
-        });
-        rotationSpeedSlider.addEventListener('input', (e) => { rotationSpeed = e.target.value / 1000; });
-        zoomSlider.addEventListener('input', (e) => { if (camera) camera.position.z = e.target.value; });
-        charsetSelect.addEventListener('change', (e) => { currentAsciiChars = CHAR_SETS[e.target.value]; });
-        resolutionSlider.addEventListener('input', updateRendererSize);
-
-        invertColorsBtn.addEventListener('click', () => {
-            [modelColor, bgColor] = [bgColor, modelColor];
-            sceneBgColor = (sceneBgColor === 0x000000) ? 0xffffff : 0x000000;
-            scene.background = new THREE.Color(sceneBgColor);
-            asciiOutput.style.backgroundColor = (sceneBgColor === 0x000000) ? '#000000' : '#ffffff';
-        });
-
-        asciiOutput.addEventListener('mousedown', (e) => { isDragging = true; previousMousePosition = { x: e.clientX, y: e.clientY }; });
-        document.addEventListener('mouseup', () => { isDragging = false; });
-        document.addEventListener('mousemove', (e) => {
-            if (!isDragging || !mesh) return;
-            const deltaMove = { x: e.clientX - previousMousePosition.x, y: e.clientY - previousMousePosition.y };
-            mesh.rotation.y += deltaMove.x * 0.01;
-            mesh.rotation.x += deltaMove.y * 0.01;
-            previousMousePosition = { x: e.clientX, y: e.clientY };
-        });
-
-        // --- 렌더링 ---
-        function renderToAscii() {
-            if (!renderer || !scene || !camera) return;
-            renderer.render(scene, camera);
-            const gl = renderer.getContext();
-            const width = gl.drawingBufferWidth, height = gl.drawingBufferHeight;
-            if (width === 0 || height === 0) return;
             
-            const pixels = new Uint8Array(width * height * 4);
-            gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-
-            let htmlString = '';
-            const brightnessThreshold = sceneBgColor === 0x000000 ? 10 : 245;
-
-            for (let y = height - 1; y >= 0; y--) {
-                for (let x = 0; x < width; x++) {
-                    const offset = (y * width + x) * 4;
-                    const brightness = (pixels[offset] + pixels[offset + 1] + pixels[offset + 2]) / 3;
-                    const charIndex = Math.floor((brightness / 255) * (currentAsciiChars.length - 1));
-                    const char = currentAsciiChars[charIndex] || ' ';
-                    
-                    const isModel = sceneBgColor === 0x000000 ? brightness > brightnessThreshold : brightness < brightnessThreshold;
-                    
-                    if (isModel) {
-                        htmlString += `<span style="color: ${modelColor};">${char}</span>`;
-                    } else {
-                        htmlString += `<span style="color: ${bgColor};">${char}</span>`;
-                    }
+            function resetCamera() {
+                if(camera) camera.position.z = 100;
+                zoomSlider.value = 100;
+            }
+            
+            function updateRendererSize() {
+                if (!asciiOutput) return;
+                const fontSize = parseInt(resolutionSlider.max) + parseInt(resolutionSlider.min) - parseInt(resolutionSlider.value);
+                const lineHeight = fontSize;
+                asciiOutput.style.fontSize = `${fontSize}px`;
+                asciiOutput.style.lineHeight = `${lineHeight}px`;
+                const charWidth = fontSize * 0.6, charHeight = lineHeight;
+                if (charWidth <= 0 || charHeight <= 0) return;
+                const containerWidth = asciiOutput.clientWidth, containerHeight = asciiOutput.clientHeight;
+                const renderWidth = Math.floor(containerWidth / charWidth);
+                const renderHeight = Math.floor(containerHeight / charHeight);
+                if (renderer) renderer.setSize(renderWidth, renderHeight);
+                if (camera) {
+                    camera.aspect = renderWidth / renderHeight;
+                    camera.updateProjectionMatrix();
                 }
-                htmlString += '\n';
             }
-            asciiOutput.innerHTML = htmlString;
-        }
 
-        // --- 최적화된 애니메이션 루프 ---
-        function animate(currentTime) {
-            animationFrameId = requestAnimationFrame(animate);
-            if (mesh && isAutoRotating && !isDragging) {
-                mesh.rotation.y += rotationSpeed;
+            // --- 파일 및 STL 로드 ---
+            fileInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                fileNameDisplay.textContent = `파일: ${file.name}`;
+                const reader = new FileReader();
+                reader.onload = (e) => processSTL(e.target.result);
+                reader.readAsArrayBuffer(file);
+            });
+
+            async function loadModelFromUrl(url) {
+                if (!url) {
+                    fileNameDisplay.textContent = "URL을 입력하세요.";
+                    return;
+                }
+                fileNameDisplay.textContent = "URL에서 로딩 중...";
+                try {
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error(`HTTP 오류! 상태: ${response.status}`);
+                    const data = await response.arrayBuffer();
+                    fileNameDisplay.textContent = `로드 완료: ${url.split('/').pop()}`;
+                    processSTL(data);
+                } catch (error) {
+                    console.error("URL 로드 실패:", error);
+                    fileNameDisplay.textContent = "오류: URL 로드 실패";
+                }
             }
-            if (currentTime - lastUpdateTime > updateInterval) {
-                renderToAscii();
-                lastUpdateTime = currentTime;
+
+            loadUrlBtn.addEventListener('click', () => loadModelFromUrl(urlInput.value.trim()));
+
+            function processSTL(contents) {
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                if (!scene) initThree();
+                while(scene.children.length > 0) scene.remove(scene.children[0]); 
+                asciiOutput.style.display = 'block';
+                asciiOutput.style.textAlign = 'left';
+
+                const loader = new THREE.STLLoader();
+                const geometry = loader.parse(contents);
+                geometry.center();
+                const material = new THREE.MeshNormalMaterial();
+                mesh = new THREE.Mesh(geometry, material);
+                const box = new THREE.Box3().setFromObject(mesh);
+                const size = box.getSize(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const scale = 100 / maxDim;
+                mesh.scale.set(scale, scale, scale);
+                scene.add(mesh);
+                resetCamera();
+                animate(0);
             }
-        }
+
+            // --- 컨트롤 이벤트 리스너 ---
+            toggleRotationBtn.addEventListener('click', () => {
+                isAutoRotating = !isAutoRotating;
+                toggleRotationBtn.textContent = isAutoRotating ? '회전 정지' : '회전 시작';
+            });
+            rotationSpeedSlider.addEventListener('input', (e) => { rotationSpeed = e.target.value / 1000; });
+            zoomSlider.addEventListener('input', (e) => { if (camera) camera.position.z = e.target.value; });
+            charsetSelect.addEventListener('change', (e) => { currentAsciiChars = CHAR_SETS[e.target.value]; });
+            resolutionSlider.addEventListener('input', updateRendererSize);
+            invertColorsBtn.addEventListener('click', () => {
+                [modelColor, bgColor] = [bgColor, modelColor];
+                sceneBgColor = (sceneBgColor === 0x000000) ? 0xffffff : 0x000000;
+                scene.background = new THREE.Color(sceneBgColor);
+                asciiOutput.style.backgroundColor = (sceneBgColor === 0x000000) ? '#000000' : '#ffffff';
+            });
+            asciiOutput.addEventListener('mousedown', (e) => { isDragging = true; previousMousePosition = { x: e.clientX, y: e.clientY }; });
+            document.addEventListener('mouseup', () => { isDragging = false; });
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging || !mesh) return;
+                const deltaMove = { x: e.clientX - previousMousePosition.x, y: e.clientY - previousMousePosition.y };
+                mesh.rotation.y += deltaMove.x * 0.01;
+                mesh.rotation.x += deltaMove.y * 0.01;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+
+            // --- 렌더링 ---
+            function renderToAscii() {
+                if (!renderer || !scene || !camera) return;
+                renderer.render(scene, camera);
+                const gl = renderer.getContext();
+                const width = gl.drawingBufferWidth, height = gl.drawingBufferHeight;
+                if (width === 0 || height === 0) return;
+                const pixels = new Uint8Array(width * height * 4);
+                gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+                let htmlString = '';
+                const brightnessThreshold = sceneBgColor === 0x000000 ? 10 : 245;
+                for (let y = height - 1; y >= 0; y--) {
+                    for (let x = 0; x < width; x++) {
+                        const offset = (y * width + x) * 4;
+                        const brightness = (pixels[offset] + pixels[offset + 1] + pixels[offset + 2]) / 3;
+                        const charIndex = Math.floor((brightness / 255) * (currentAsciiChars.length - 1));
+                        const char = currentAsciiChars[charIndex] || ' ';
+                        const isModel = sceneBgColor === 0x000000 ? brightness > brightnessThreshold : brightness < brightnessThreshold;
+                        if (isModel) {
+                            htmlString += `<span style="color: ${modelColor};">${char}</span>`;
+                        } else {
+                            htmlString += `<span style="color: ${bgColor};">${char}</span>`;
+                        }
+                    }
+                    htmlString += '\n';
+                }
+                asciiOutput.innerHTML = htmlString;
+            }
+
+            // --- 최적화된 애니메이션 루프 ---
+            function animate(currentTime) {
+                animationFrameId = requestAnimationFrame(animate);
+                if (mesh && isAutoRotating && !isDragging) {
+                    mesh.rotation.y += rotationSpeed;
+                }
+                if (currentTime - lastUpdateTime > updateInterval) {
+                    renderToAscii();
+                    lastUpdateTime = currentTime;
+                }
+            }
+
+            // --- 페이지 로드 시 기본 모델 불러오기 ---
+            loadModelFromUrl(defaultStlUrl);
+        });
     </script>
 </body>
 </html>
