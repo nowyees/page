@@ -65,6 +65,11 @@
             justify-content: center;
             align-items: center;
             text-align: center;
+            /* *** 수정: 드래그 시 텍스트 선택 방지 *** */
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
         }
         #ascii-output:active {
             cursor: grabbing;
@@ -196,9 +201,6 @@
             let currentAsciiChars = CHAR_SETS.detailed;
             let modelColor = '#87CEFA', bgColor = '#333', sceneBgColor = 0x000000;
             
-            // ===================================================================
-            // *** 여기에 본인의 GitHub Raw URL을 붙여넣으세요. ***
-            // ===================================================================
             const defaultStlUrl = 'https://raw.githubusercontent.com/nowyees/page/main/basic%20model.stl';
 
             // --- Three.js 초기화 및 리셋 ---
