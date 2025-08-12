@@ -52,52 +52,13 @@
             margin-top: 0;
             line-height: 1.5;
         }
-        input[type="file"] {
-            display: none;
-        }
-        .file-label, button, select {
-            font-family: "Press Start 2P", "Tahoma", sans-serif;
-            font-size: 12px;
-            background-color: #c0c0c0;
-            color: #000000;
-            padding: 8px 12px;
-            border-top: 2px solid #ffffff;
-            border-left: 2px solid #ffffff;
-            border-right: 2px solid #808080;
-            border-bottom: 2px solid #808080;
-            cursor: pointer;
-            text-align: center;
-        }
-        .file-label:active, button:active {
-            border-top: 2px solid #808080;
-            border-left: 2px solid #808080;
-            border-right: 2px solid #ffffff;
-            border-bottom: 2px solid #ffffff;
-        }
-        select {
-            padding-right: 20px;
-        }
-        #file-name {
-            margin-top: 0.5rem;
-            padding: 0.5rem;
-            border: 2px inset #808080;
-            background-color: #ffffff;
-            min-height: 1.2em;
-        }
-        #url-input {
-            width: 100%;
-            box-sizing: border-box;
-            font-size: 12px;
-            padding: 4px;
-            border: 2px inset #808080;
-        }
         #ascii-output {
             font-family: "Courier New", Courier, monospace;
             white-space: pre;
             background-color: #000000;
             padding: 0.5rem;
             border: 2px inset #808080;
-            overflow: hidden; /* 스크롤바 제거 */
+            overflow: hidden;
             cursor: grab;
             height: 350px; 
             display: flex;
@@ -114,7 +75,7 @@
         fieldset {
             border: 2px groove #c0c0c0;
             padding: 1rem;
-            margin: 1rem 0;
+            margin-top: 1rem;
         }
         legend {
             padding: 0 0.5rem;
@@ -123,6 +84,7 @@
             display: flex;
             gap: 1rem;
             flex-wrap: wrap;
+            justify-content: center;
         }
         .control-group {
             display: flex;
@@ -134,6 +96,25 @@
             align-items: center;
             gap: 0.5rem;
         }
+        button, select {
+            font-family: "Press Start 2P", "Tahoma", sans-serif;
+            font-size: 12px;
+            background-color: #c0c0c0;
+            color: #000000;
+            padding: 8px 12px;
+            border-top: 2px solid #ffffff;
+            border-left: 2px solid #ffffff;
+            border-right: 2px solid #808080;
+            border-bottom: 2px solid #808080;
+            cursor: pointer;
+            text-align: center;
+        }
+        button:active {
+            border-top: 2px solid #808080;
+            border-left: 2px solid #808080;
+            border-right: 2px solid #ffffff;
+            border-bottom: 2px solid #ffffff;
+        }
     </style>
 </head>
 <body>
@@ -143,20 +124,12 @@
             <span>STL 3D ASCII Viewer</span>
         </div>
         <div class="window-body">
-            <p>기본 모델이 표시됩니다. 다른 파일을 보려면 선택하거나 URL을 붙여넣으세요.</p>
+            <p>아래 컨트롤러로 모델을 제어해보세요.</p>
             
-            <fieldset>
-                <legend>파일 불러오기</legend>
-                <div class="control-item">
-                    <label for="stl-file-input" class="file-label">내 파일...</label>
-                    <div id="file-name" style="flex-grow: 1;">선택된 파일 없음</div>
-                </div>
-                <div class="control-item" style="margin-top: 1rem;">
-                    <input type="text" id="url-input" placeholder="https://.../file.stl">
-                    <button id="load-url-btn">URL 로드</button>
-                </div>
-            </fieldset>
-            
+            <div id="ascii-output">
+                <div class="placeholder">모델 로딩 중...</div>
+            </div>
+
             <div class="controls-container">
                 <fieldset>
                     <legend>모델 컨트롤</legend>
@@ -193,20 +166,12 @@
                 </fieldset>
             </div>
 
-            <div id="ascii-output">
-                <div class="placeholder">모델 로딩 중...</div>
-            </div>
         </div>
     </div>
 
     <script>
-        // *** 수정: 스크립트 전체를 DOMContentLoaded 이벤트 리스너로 감싸서 실행 시점을 보장합니다. ***
         document.addEventListener('DOMContentLoaded', () => {
             // --- 기본 요소 ---
-            const fileInput = document.getElementById('stl-file-input');
-            const fileNameDisplay = document.getElementById('file-name');
-            const urlInput = document.getElementById('url-input');
-            const loadUrlBtn = document.getElementById('load-url-btn');
             const asciiOutput = document.getElementById('ascii-output');
             const toggleRotationBtn = document.getElementById('toggle-rotation-btn');
             const rotationSpeedSlider = document.getElementById('rotation-speed-slider');
@@ -230,7 +195,11 @@
             };
             let currentAsciiChars = CHAR_SETS.detailed;
             let modelColor = '#87CEFA', bgColor = '#333', sceneBgColor = 0x000000;
-            const defaultStlUrl = '스크류바 조명.stl';
+            
+            // ===================================================================
+            // *** 여기에 본인의 GitHub Raw URL을 붙여넣으세요. ***
+            // ===================================================================
+            const defaultStlUrl = 'https://raw.githubusercontent.com/nowyees/page/main/basic%20model.stl';
 
             // --- Three.js 초기화 및 리셋 ---
             function initThree() {
@@ -265,35 +234,20 @@
                 }
             }
 
-            // --- 파일 및 STL 로드 ---
-            fileInput.addEventListener('change', (event) => {
-                const file = event.target.files[0];
-                if (!file) return;
-                fileNameDisplay.textContent = `파일: ${file.name}`;
-                const reader = new FileReader();
-                reader.onload = (e) => processSTL(e.target.result);
-                reader.readAsArrayBuffer(file);
-            });
-
+            // --- STL 로드 및 처리 ---
             async function loadModelFromUrl(url) {
-                if (!url) {
-                    fileNameDisplay.textContent = "URL을 입력하세요.";
-                    return;
-                }
-                fileNameDisplay.textContent = "URL에서 로딩 중...";
+                const placeholder = document.querySelector('.placeholder');
+                if(placeholder) placeholder.textContent = "URL에서 로딩 중...";
                 try {
                     const response = await fetch(url);
                     if (!response.ok) throw new Error(`HTTP 오류! 상태: ${response.status}`);
                     const data = await response.arrayBuffer();
-                    fileNameDisplay.textContent = `로드 완료: ${url.split('/').pop()}`;
                     processSTL(data);
                 } catch (error) {
                     console.error("URL 로드 실패:", error);
-                    fileNameDisplay.textContent = "오류: URL 로드 실패";
+                    if(placeholder) placeholder.textContent = "오류: URL 로드 실패";
                 }
             }
-
-            loadUrlBtn.addEventListener('click', () => loadModelFromUrl(urlInput.value.trim()));
 
             function processSTL(contents) {
                 if (animationFrameId) cancelAnimationFrame(animationFrameId);
